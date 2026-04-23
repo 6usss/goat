@@ -7,7 +7,20 @@
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 -- Load current event config
-local eventConfig = loadstring(game:HttpGet("https://raw.githubusercontent.com/6usss/goat/main/events/current.lua"))()
+-- Load current event config
+local eventConfig = (function()
+	local fn = loadstring(game:HttpGet("https://raw.githubusercontent.com/6usss/goat/main/events/current.lua"))
+	if fn then
+		return fn()
+	end
+	return {
+		eventName = "Unknown",
+		eggName = "Unknown",
+		eggLocation = Vector3.new(0, 0, 0),
+		bonusActive = false,
+		notes = "",
+	}
+end)()
 
 -- Services
 local Players = game:GetService("Players")
