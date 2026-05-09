@@ -1,7 +1,19 @@
 return {
-	eventName = "Spring 2026",
-	eggName = "Spring Egg",
-	eggLocation = Vector3.new(0, 0, 0),
+	eventName = "Void RNG Event",
+	eggName = "Void RNG Area",
+	eggLocation = Vector3.new(4023.49, 2569.82, -5448.95),
+	eventLocation = Vector3.new(4023.49, 2569.82, -5448.95),
+	petMerchantLocation = Vector3.new(4025.30, 2569.82, -5305.76),
+	diceCraftLocation = Vector3.new(4079.96, 2569.82, -5344.44),
+	merchantName = "LuckyDiceMerchantV2",
+	craftDiceName = "Lucky Dice II V2",
+	upgradeTier = "First",
+	upgrades = {
+		"RNGEggLuck",
+		"RNGHatchSpeed",
+		"RNGBonusLuck",
+		"RNGHugeLuck",
+	},
 	bonusActive = true,
-	notes = "",
+	notes = "Void RNG uses V2 dice, auto roll, RNG upgrades, dice crafting, and Lucky Dice Merchant V2.",
 }

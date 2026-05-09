@@ -335,6 +335,7 @@ local tabs = {}
 local activeTab = nil
 
 local tabDefs = {
+	{ name = "Kaitun", icon = "K" },
 	{ name = "Current Event", icon = "⚡" },
 	{ name = "Auto Farm", icon = "🌾" },
 	{ name = "Automatic", icon = "🔄" },
@@ -714,7 +715,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(1, -16, 0, 20)
 versionLabel.Position = UDim2.new(0, 8, 1, -28)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.0.0  •  6usss"
+versionLabel.Text = "v1.1.0  •  6usss"
 versionLabel.TextColor3 = Theme.TextDim
 versionLabel.TextSize = 10
 versionLabel.Font = Enum.Font.Gotham
@@ -728,7 +729,7 @@ local evScroll = tabs["Current Event"].scroll
 
 createSection(evScroll, "Event Info")
 createLabel(evScroll, "Event : " .. eventConfig.eventName, Theme.Accent)
-createLabel(evScroll, "Egg : " .. eventConfig.eggName)
+createLabel(evScroll, "Area : " .. eventConfig.eggName)
 createLabel(
 	evScroll,
 	eventConfig.bonusActive and "Bonus : ⚡ Active" or "Bonus : Inactive",
@@ -739,18 +740,27 @@ if eventConfig.notes ~= "" then
 end
 
 createSection(evScroll, "Actions")
-createButton(evScroll, "Go to Event Egg", "Teleport to the current event egg", function()
+createButton(evScroll, "Go to Event Area", "Teleport to the current event area", function()
 	local char = LocalPlayer.Character
 	if char and char:FindFirstChild("HumanoidRootPart") then
-		char.HumanoidRootPart.CFrame = CFrame.new(eventConfig.eggLocation)
-		notify("Teleport", "Moved to " .. eventConfig.eggName, "success")
+		char.HumanoidRootPart.CFrame = CFrame.new(eventConfig.eventLocation or eventConfig.eggLocation)
+		notify("Teleport", "Moved to " .. eventConfig.eventName, "success")
 	end
 end)
 
 local autoEventHatch = false
-createToggle(evScroll, "Auto Hatch Event Egg", "Automatically hatch the event egg", false, function(v)
+createToggle(evScroll, "Auto Roll Event", "Automatically roll in the event", false, function(v)
 	autoEventHatch = v
-	notify("Auto Hatch Event", v and "Enabled" or "Disabled", v and "success" or nil)
+	if v then
+		pcall(function()
+			game:GetService("ReplicatedStorage").Network:WaitForChild("AutoRoll_Enable"):FireServer()
+		end)
+	else
+		pcall(function()
+			game:GetService("ReplicatedStorage").Network:WaitForChild("AutoRoll_Disable"):FireServer()
+		end)
+	end
+	notify("Auto Roll Event", v and "Enabled" or "Disabled", v and "success" or nil)
 end)
 
 -- ================================================
@@ -804,6 +814,508 @@ createToggle(autoScroll, "Auto Complete Quests", "Complete quests automatically"
 end)
 createToggle(autoScroll, "Auto Open Chests", "Open chests automatically", false, function(v)
 	autoChest = v
+end)
+
+-- ================================================
+--  Tab Content : Kaitun
+-- ================================================
+local kaitunScroll = tabs["Kaitun"].scroll
+
+local KaitunConfig = {
+	enabled = false,
+	autoRoll = true,
+	hiddenRoll = true,
+	buyDiceMerchant = true,
+	craftDiceII = false,
+	purchaseUpgrades = true,
+	useDice = false,
+	teleportEvent = false,
+	loopDelay = 2,
+}
+
+local KaitunState = {
+	step = "Idle",
+	cycles = 0,
+	lastError = "",
+	sessionRolls = 0,
+	rngCoins = "Scanning",
+	diceSummary = "Scanning",
+	lastStatsRefresh = "Never",
+}
+
+local kaitunStatusLabel
+local kaitunCycleLabel
+local kaitunErrorLabel
+local kaitunRollLabel
+local kaitunCoinsLabel
+local kaitunDiceLabel
+local kaitunRefreshLabel
+
+local function setKaitunStep(step)
+	KaitunState.step = step
+	if kaitunStatusLabel then
+		kaitunStatusLabel.Text = "  Status : " .. step
+	end
+end
+
+local function setKaitunError(message)
+	KaitunState.lastError = message or ""
+	if kaitunErrorLabel then
+		kaitunErrorLabel.Text = "  Last error : " .. (KaitunState.lastError ~= "" and KaitunState.lastError or "None")
+	end
+end
+
+local function refreshKaitunCycleLabel()
+	if kaitunCycleLabel then
+		kaitunCycleLabel.Text = "  Cycles : " .. tostring(KaitunState.cycles)
+	end
+end
+
+local function refreshKaitunStatsLabels()
+	if kaitunRollLabel then
+		kaitunRollLabel.Text = "  Session rolls : " .. tostring(KaitunState.sessionRolls)
+	end
+	if kaitunCoinsLabel then
+		kaitunCoinsLabel.Text = "  RNG Coins : " .. tostring(KaitunState.rngCoins)
+	end
+	if kaitunDiceLabel then
+		kaitunDiceLabel.Text = "  V2 Dice : " .. tostring(KaitunState.diceSummary)
+	end
+	if kaitunRefreshLabel then
+		kaitunRefreshLabel.Text = "  Last refresh : " .. tostring(KaitunState.lastStatsRefresh)
+	end
+end
+
+local function getCharacterRoot()
+	local char = LocalPlayer.Character
+	if not char then
+		return nil
+	end
+	return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function teleportTo(position, label)
+	local root = getCharacterRoot()
+	if not root then
+		return false, "Character is not ready"
+	end
+	if typeof(position) ~= "Vector3" or position.Magnitude <= 0 then
+		return false, "Missing position for " .. (label or "target")
+	end
+	root.CFrame = CFrame.new(position)
+	return true
+end
+
+local function getNetworkRemote(name)
+	local network = game:GetService("ReplicatedStorage"):WaitForChild("Network")
+	return network:WaitForChild(name)
+end
+
+local function invokeRemote(name, ...)
+	return getNetworkRemote(name):InvokeServer(...)
+end
+
+local function fireRemote(name, ...)
+	getNetworkRemote(name):FireServer(...)
+end
+
+local function formatNumber(value)
+	local numberValue = tonumber(value)
+	if not numberValue then
+		return tostring(value)
+	end
+
+	local sign = numberValue < 0 and "-" or ""
+	local formatted = tostring(math.floor(math.abs(numberValue)))
+	local result = formatted:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+	return sign .. result
+end
+
+local function normalizeKey(value)
+	return tostring(value):lower():gsub("%s+", ""):gsub("_", "")
+end
+
+local function keyMatchesAny(value, keywords)
+	local normalized = normalizeKey(value)
+	for _, keyword in ipairs(keywords) do
+		if normalized:find(normalizeKey(keyword), 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+local function extractNumberFromText(text)
+	if not text or text == "" then
+		return nil
+	end
+
+	local cleaned = text:gsub(",", ""):gsub("%s+", "")
+	local rawNumber, suffix = cleaned:match("([%d%.]+)([kKmMbBtT]?)")
+	if not rawNumber then
+		return nil
+	end
+
+	local value = tonumber(rawNumber)
+	if not value then
+		return nil
+	end
+
+	suffix = suffix:lower()
+	if suffix == "k" then
+		value *= 1000
+	elseif suffix == "m" then
+		value *= 1000000
+	elseif suffix == "b" then
+		value *= 1000000000
+	elseif suffix == "t" then
+		value *= 1000000000000
+	end
+
+	return math.floor(value)
+end
+
+local function findLocalValueByKeywords(root, keywords)
+	if not root then
+		return nil
+	end
+
+	for _, obj in ipairs(root:GetDescendants()) do
+		if keyMatchesAny(obj.Name, keywords) then
+			if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
+				return obj.Value
+			end
+			if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+				local value = extractNumberFromText(obj.Text)
+				if value then
+					return value
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+local function readRngCoins()
+	local keywords = { "rngcoin", "rngcoins", "voidcoin", "voidcoins" }
+	local playerValue = findLocalValueByKeywords(LocalPlayer, keywords)
+	if playerValue ~= nil then
+		return formatNumber(playerValue)
+	end
+
+	local guiValue = findLocalValueByKeywords(LocalPlayer:FindFirstChild("PlayerGui"), keywords)
+	if guiValue ~= nil then
+		return formatNumber(guiValue)
+	end
+
+	return "Unknown"
+end
+
+local function addDiceCount(counts, diceName, amount)
+	if not diceName then
+		return
+	end
+
+	local normalized = normalizeKey(diceName)
+	if not normalized:find("v2", 1, true) then
+		return
+	end
+	if not normalized:find("luckydice", 1, true) then
+		return
+	end
+
+	counts[diceName] = (counts[diceName] or 0) + (tonumber(amount) or 0)
+end
+
+local function scanDiceTable(value, counts, keyHint, depth)
+	depth = depth or 0
+	if depth > 4 then
+		return
+	end
+
+	if typeof(value) ~= "table" then
+		if keyHint and (typeof(value) == "number" or tonumber(value)) then
+			addDiceCount(counts, keyHint, value)
+		end
+		return
+	end
+
+	local candidateName
+	local candidateAmount
+	for key, child in pairs(value) do
+		local keyName = normalizeKey(key)
+		if typeof(child) == "string" and keyMatchesAny(child, { "Lucky Dice", "Mega Lucky Dice" }) then
+			candidateName = child
+		elseif keyName:find("name", 1, true) or keyName:find("id", 1, true) or keyName:find("item", 1, true) then
+			if typeof(child) == "string" and keyMatchesAny(child, { "Lucky Dice", "Mega Lucky Dice" }) then
+				candidateName = child
+			end
+		elseif keyName:find("amount", 1, true) or keyName:find("count", 1, true) or keyName:find("quantity", 1, true) then
+			if typeof(child) == "number" or tonumber(child) then
+				candidateAmount = child
+			end
+		end
+	end
+
+	if candidateName and candidateAmount then
+		addDiceCount(counts, candidateName, candidateAmount)
+	end
+
+	for key, child in pairs(value) do
+		local nextHint = keyHint
+		if typeof(key) == "string" and keyMatchesAny(key, { "Lucky Dice", "Mega Lucky Dice" }) then
+			nextHint = key
+		end
+
+		if typeof(child) == "table" then
+			scanDiceTable(child, counts, nextHint, depth + 1)
+		elseif nextHint then
+			scanDiceTable(child, counts, nextHint, depth + 1)
+		end
+	end
+end
+
+local function scanLocalDiceValues(counts)
+	local roots = {
+		LocalPlayer,
+		LocalPlayer:FindFirstChild("PlayerGui"),
+	}
+
+	for _, root in ipairs(roots) do
+		if root then
+			for _, obj in ipairs(root:GetDescendants()) do
+				if keyMatchesAny(obj.Name, { "Lucky Dice", "Mega Lucky Dice" }) and normalizeKey(obj.Name):find("v2", 1, true) then
+					if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
+						addDiceCount(counts, obj.Name, obj.Value)
+					elseif obj:IsA("TextLabel") or obj:IsA("TextButton") then
+						local value = extractNumberFromText(obj.Text)
+						if value then
+							addDiceCount(counts, obj.Name, value)
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+local function readDiceSummary()
+	local counts = {}
+	local ok, diceData = pcall(function()
+		return invokeRemote("LuckyDice_Get")
+	end)
+
+	if ok and typeof(diceData) == "table" then
+		scanDiceTable(diceData, counts)
+	end
+
+	scanLocalDiceValues(counts)
+
+	local order = {
+		"Lucky Dice V2",
+		"Lucky Dice II V2",
+		"Mega Lucky Dice V2",
+		"Mega Lucky Dice II V2",
+	}
+
+	local parts = {}
+	for _, diceName in ipairs(order) do
+		if counts[diceName] and counts[diceName] > 0 then
+			table.insert(parts, diceName .. " x" .. formatNumber(counts[diceName]))
+		end
+	end
+
+	for diceName, count in pairs(counts) do
+		local listed = false
+		for _, orderedName in ipairs(order) do
+			if orderedName == diceName then
+				listed = true
+				break
+			end
+		end
+		if not listed and count > 0 then
+			table.insert(parts, diceName .. " x" .. formatNumber(count))
+		end
+	end
+
+	if #parts == 0 then
+		return "None detected"
+	end
+
+	return table.concat(parts, " | ")
+end
+
+local function refreshLiveStats()
+	KaitunState.rngCoins = readRngCoins()
+	KaitunState.diceSummary = readDiceSummary()
+	KaitunState.lastStatsRefresh = os.date("%H:%M:%S")
+	refreshKaitunStatsLabels()
+end
+
+local function safeKaitunCall(label, fn)
+	local ok, err = pcall(fn)
+	if not ok then
+		setKaitunError(label .. " failed: " .. tostring(err))
+		return false
+	end
+	return true
+end
+
+local KaitunHooks = {
+	AutoRoll = function()
+		fireRemote("AutoRoll_Enable")
+		local result = invokeRemote("Rng_Roll")
+		KaitunState.sessionRolls += 1
+		refreshKaitunStatsLabels()
+		return result
+	end,
+	HiddenRoll = function()
+		fireRemote("Rng_HiddenRoll_Enable")
+	end,
+	BuyDiceMerchant = function()
+		local merchantName = eventConfig.merchantName or "LuckyDiceMerchantV2"
+		for slot = 1, 5 do
+			invokeRemote("Merchant_RequestPurchase", merchantName, slot)
+			task.wait(0.15)
+		end
+	end,
+	CraftDiceII = function()
+		invokeRemote("LuckyDice_Craft", eventConfig.craftDiceName or "Lucky Dice II V2", 1)
+	end,
+	PurchaseUpgrades = function()
+		local tier = eventConfig.upgradeTier or "First"
+		local upgrades = eventConfig.upgrades or {
+			"RNGEggLuck",
+			"RNGHatchSpeed",
+			"RNGBonusLuck",
+			"RNGHugeLuck",
+		}
+
+		for _, upgrade in ipairs(upgrades) do
+			invokeRemote("Rng_PurchaseUpgrade", tier, upgrade)
+			task.wait(0.15)
+		end
+	end,
+	UseDice = function()
+		-- Kept off by default to avoid wasting V2 dice before the exact consume args are confirmed.
+		invokeRemote("LuckyDice_Consume", eventConfig.craftDiceName or "Lucky Dice II V2")
+	end,
+}
+
+local function runKaitunCycle()
+	KaitunState.cycles += 1
+	refreshKaitunCycleLabel()
+	setKaitunError("")
+
+	if KaitunConfig.teleportEvent then
+		setKaitunStep("Moving to Void RNG")
+		local ok, err = teleportTo(eventConfig.eventLocation or eventConfig.eggLocation, eventConfig.eventName)
+		if not ok then
+			setKaitunError(err)
+		end
+	end
+
+	if KaitunConfig.hiddenRoll then
+		setKaitunStep("Enabling hidden roll")
+		safeKaitunCall("Hidden roll", KaitunHooks.HiddenRoll)
+	end
+	if KaitunConfig.autoRoll then
+		setKaitunStep("Rolling")
+		safeKaitunCall("Auto roll", KaitunHooks.AutoRoll)
+	end
+	if KaitunConfig.purchaseUpgrades then
+		setKaitunStep("Buying RNG upgrades")
+		safeKaitunCall("RNG upgrades", KaitunHooks.PurchaseUpgrades)
+	end
+	if KaitunConfig.buyDiceMerchant then
+		setKaitunStep("Buying V2 dice merchant")
+		safeKaitunCall("Dice merchant", KaitunHooks.BuyDiceMerchant)
+	end
+	if KaitunConfig.craftDiceII then
+		setKaitunStep("Crafting Lucky Dice II V2")
+		safeKaitunCall("Craft dice", KaitunHooks.CraftDiceII)
+	end
+	if KaitunConfig.useDice then
+		setKaitunStep("Using Lucky Dice II V2")
+		safeKaitunCall("Use dice", KaitunHooks.UseDice)
+	end
+
+	setKaitunStep(KaitunConfig.enabled and "Waiting" or "Idle")
+end
+
+createSection(kaitunScroll, "Kaitun Status")
+kaitunStatusLabel = createLabel(kaitunScroll, "Status : Idle", Theme.Accent)
+kaitunCycleLabel = createLabel(kaitunScroll, "Cycles : 0")
+kaitunRollLabel = createLabel(kaitunScroll, "Session rolls : 0")
+kaitunCoinsLabel = createLabel(kaitunScroll, "RNG Coins : Scanning")
+kaitunDiceLabel = createLabel(kaitunScroll, "V2 Dice : Scanning")
+kaitunRefreshLabel = createLabel(kaitunScroll, "Last refresh : Never")
+kaitunErrorLabel = createLabel(kaitunScroll, "Last error : None")
+
+createSection(kaitunScroll, "Main")
+createToggle(kaitunScroll, "Start Kaitun", "Run the full progression loop", false, function(v)
+	KaitunConfig.enabled = v
+	setKaitunStep(v and "Starting" or "Idle")
+	notify("Kaitun", v and "Started" or "Stopped", v and "success" or nil)
+end)
+createSlider(kaitunScroll, "Loop Delay", "Seconds between kaitun cycles", 1, 10, KaitunConfig.loopDelay, function(v)
+	KaitunConfig.loopDelay = v
+end)
+createButton(kaitunScroll, "Teleport to Void RNG", "Move into the current event area", function()
+	local ok, err = teleportTo(eventConfig.eventLocation or eventConfig.eggLocation, eventConfig.eventName)
+	if ok then
+		notify("Teleport", "Moved to " .. eventConfig.eventName, "success")
+	else
+		notify("Teleport", err, "error")
+	end
+end)
+createButton(kaitunScroll, "Refresh Live Stats", "Update coins and V2 dice now", function()
+	refreshLiveStats()
+	notify("Kaitun", "Live stats refreshed", "success")
+end)
+
+createSection(kaitunScroll, "Void RNG")
+createToggle(kaitunScroll, "Auto Roll", "Enable RNG auto roll", KaitunConfig.autoRoll, function(v)
+	KaitunConfig.autoRoll = v
+end)
+createToggle(kaitunScroll, "Hidden Roll", "Keep hidden roll enabled", KaitunConfig.hiddenRoll, function(v)
+	KaitunConfig.hiddenRoll = v
+end)
+createToggle(kaitunScroll, "Buy Merchant V2 Slots", "Buy LuckyDiceMerchantV2 slots 1 to 5", KaitunConfig.buyDiceMerchant, function(v)
+	KaitunConfig.buyDiceMerchant = v
+end)
+createToggle(kaitunScroll, "Buy RNG Upgrades", "Try all mapped RNG upgrades", KaitunConfig.purchaseUpgrades, function(v)
+	KaitunConfig.purchaseUpgrades = v
+end)
+createToggle(kaitunScroll, "Craft Lucky Dice II V2", "Craft one Lucky Dice II V2 per cycle", KaitunConfig.craftDiceII, function(v)
+	KaitunConfig.craftDiceII = v
+end)
+createToggle(kaitunScroll, "Use Lucky Dice II V2", "Off by default until consume args are confirmed", KaitunConfig.useDice, function(v)
+	KaitunConfig.useDice = v
+end)
+
+createSection(kaitunScroll, "Movement")
+createToggle(kaitunScroll, "Teleport Each Cycle", "Move to Void RNG at the start of each cycle", KaitunConfig.teleportEvent, function(v)
+	KaitunConfig.teleportEvent = v
+end)
+createButton(kaitunScroll, "Run One Cycle", "Test the selected kaitun steps once", function()
+	runKaitunCycle()
+	notify("Kaitun", "One cycle completed", "success")
+end)
+createButton(kaitunScroll, "Stop All Automation", "Disable kaitun and all auto toggles", function()
+	KaitunConfig.enabled = false
+	autoFarm, autoCoin, autoBreak = false, false, false
+	autoHatch, autoUpgrade, autoRebirth, autoQuest, autoChest = false, false, false, false, false
+	autoEventHatch = false
+	safeKaitunCall("Disable auto roll", function()
+		fireRemote("AutoRoll_Disable")
+	end)
+	safeKaitunCall("Disable hidden roll", function()
+		fireRemote("Rng_HiddenRoll_Disable")
+	end)
+	setKaitunStep("Idle")
+	notify("Kaitun", "Automation stopped", nil)
 end)
 
 -- ================================================
@@ -875,7 +1387,7 @@ local infoScroll = tabs["Info"].scroll
 
 createSection(infoScroll, "Script Info")
 createLabel(infoScroll, "Script : GOAT", Theme.Accent)
-createLabel(infoScroll, "Version : 1.0.0")
+createLabel(infoScroll, "Version : 1.1.0")
 createLabel(infoScroll, "Game : Pet Simulator 99")
 createLabel(infoScroll, "Author : 6usss")
 createLabel(infoScroll, "Event : " .. eventConfig.eventName)
@@ -889,6 +1401,23 @@ end)
 --  Activate first tab by default
 -- ================================================
 tabs["Current Event"].button:FireButton1Click()
+
+task.spawn(function()
+	while ScreenGui.Parent do
+		if KaitunConfig.enabled then
+			runKaitunCycle()
+		end
+		task.wait(KaitunConfig.loopDelay)
+	end
+end)
+
+task.spawn(function()
+	task.wait(2)
+	while ScreenGui.Parent do
+		pcall(refreshLiveStats)
+		task.wait(5)
+	end
+end)
 
 -- ================================================
 --  Main Loop
