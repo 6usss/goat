@@ -730,7 +730,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(1, -16, 0, 20)
 versionLabel.Position = UDim2.new(0, 8, 1, -28)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1.1  •  6usss"
+versionLabel.Text = "v1.1.2  •  6usss"
 versionLabel.TextColor3 = Theme.TextDim
 versionLabel.TextSize = 10
 versionLabel.Font = Enum.Font.Gotham
@@ -1180,7 +1180,7 @@ end
 local KaitunHooks = {
 	AutoRoll = function()
 		fireRemote("AutoRoll_Enable")
-		local result = invokeRemote("Rng_Roll")
+		local result = invokeRemote("Rng_Roll", eventConfig.rollEgg or "First")
 		KaitunState.sessionRolls += 1
 		refreshKaitunStatsLabels()
 		return result
@@ -1402,7 +1402,7 @@ local infoScroll = tabs["Info"].scroll
 
 createSection(infoScroll, "Script Info")
 createLabel(infoScroll, "Script : GOAT", Theme.Accent)
-createLabel(infoScroll, "Version : 1.1.1")
+createLabel(infoScroll, "Version : 1.1.2")
 createLabel(infoScroll, "Game : Pet Simulator 99")
 createLabel(infoScroll, "Author : 6usss")
 createLabel(infoScroll, "Event : " .. eventConfig.eventName)

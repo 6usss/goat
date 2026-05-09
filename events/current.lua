@@ -7,6 +7,7 @@ return {
 	diceCraftLocation = Vector3.new(4079.96, 2569.82, -5344.44),
 	merchantName = "LuckyDiceMerchantV2",
 	craftDiceName = "Lucky Dice II V2",
+	rollEgg = "First",
 	upgradeTier = "First",
 	upgrades = {
 		"RNGEggLuck",
