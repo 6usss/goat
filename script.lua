@@ -335,8 +335,8 @@ local tabs = {}
 local activeTab = nil
 
 local tabDefs = {
-	{ name = "Kaitun", icon = "K" },
 	{ name = "Current Event", icon = "⚡" },
+	{ name = "Kaitun", icon = "K" },
 	{ name = "Auto Farm", icon = "🌾" },
 	{ name = "Automatic", icon = "🔄" },
 	{ name = "Player", icon = "👤" },
@@ -634,9 +634,30 @@ local function createLabel(parent, text, color)
 	label.TextSize = 12
 	label.Font = Enum.Font.Gotham
 	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextTruncate = Enum.TextTruncate.AtEnd
 	label.Parent = parent
 	createCorner(label, 6)
 	return label
+end
+
+local function activateTab(tabName)
+	local selected = tabs[tabName]
+	if not selected then
+		return
+	end
+
+	for name, tab in pairs(tabs) do
+		local isActive = name == tabName
+		tab.content.Visible = isActive
+		tab.button.BackgroundColor3 = isActive and Color3.fromRGB(30, 30, 50) or Theme.Sidebar
+		tab.nameLabel.TextColor3 = isActive and Theme.Accent or Theme.TextSecond
+		tab.nameLabel.Font = isActive and Enum.Font.GothamBold or Enum.Font.GothamSemibold
+		if tab.iconLabel then
+			tab.iconLabel.TextColor3 = isActive and Theme.Accent or Theme.TextSecond
+		end
+	end
+
+	activeTab = tabName
 end
 
 -- Tab button
@@ -647,6 +668,7 @@ local function createTabButton(tabDef, index)
 	btn.BorderSizePixel = 0
 	btn.Text = ""
 	btn.LayoutOrder = index
+	btn.ZIndex = 2
 	btn.Parent = Sidebar
 	createCorner(btn, 8)
 
@@ -655,8 +677,10 @@ local function createTabButton(tabDef, index)
 	iconLabel.Position = UDim2.new(0, 8, 0, 0)
 	iconLabel.BackgroundTransparency = 1
 	iconLabel.Text = tabDef.icon
+	iconLabel.TextColor3 = Theme.TextSecond
 	iconLabel.TextSize = 14
 	iconLabel.Font = Enum.Font.Gotham
+	iconLabel.ZIndex = 3
 	iconLabel.Parent = btn
 
 	local nameLabel = Instance.new("TextLabel")
@@ -668,6 +692,8 @@ local function createTabButton(tabDef, index)
 	nameLabel.TextSize = 12
 	nameLabel.Font = Enum.Font.GothamSemibold
 	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.ZIndex = 3
 	nameLabel.Parent = btn
 
 	-- Content frame for this tab
@@ -681,25 +707,14 @@ local function createTabButton(tabDef, index)
 
 	tabs[tabDef.name] = {
 		button = btn,
+		iconLabel = iconLabel,
 		nameLabel = nameLabel,
 		content = content,
 		scroll = scroll,
 	}
 
 	btn.MouseButton1Click:Connect(function()
-		-- Deactivate all
-		for _, t in pairs(tabs) do
-			t.content.Visible = false
-			makeTween(t.button, { BackgroundColor3 = Theme.Sidebar }, 0.15)
-			t.nameLabel.TextColor3 = Theme.TextSecond
-			t.nameLabel.Font = Enum.Font.GothamSemibold
-		end
-		-- Activate clicked
-		content.Visible = true
-		makeTween(btn, { BackgroundColor3 = Color3.fromRGB(30, 30, 50) }, 0.15)
-		nameLabel.TextColor3 = Theme.Accent
-		nameLabel.Font = Enum.Font.GothamBold
-		activeTab = tabDef.name
+		activateTab(tabDef.name)
 	end)
 
 	return tabs[tabDef.name]
@@ -715,7 +730,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(1, -16, 0, 20)
 versionLabel.Position = UDim2.new(0, 8, 1, -28)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1.0  •  6usss"
+versionLabel.Text = "v1.1.1  •  6usss"
 versionLabel.TextColor3 = Theme.TextDim
 versionLabel.TextSize = 10
 versionLabel.Font = Enum.Font.Gotham
@@ -1387,7 +1402,7 @@ local infoScroll = tabs["Info"].scroll
 
 createSection(infoScroll, "Script Info")
 createLabel(infoScroll, "Script : GOAT", Theme.Accent)
-createLabel(infoScroll, "Version : 1.1.0")
+createLabel(infoScroll, "Version : 1.1.1")
 createLabel(infoScroll, "Game : Pet Simulator 99")
 createLabel(infoScroll, "Author : 6usss")
 createLabel(infoScroll, "Event : " .. eventConfig.eventName)
@@ -1400,7 +1415,7 @@ end)
 -- ================================================
 --  Activate first tab by default
 -- ================================================
-tabs["Current Event"].button:FireButton1Click()
+activateTab("Current Event")
 
 task.spawn(function()
 	while ScreenGui.Parent do
