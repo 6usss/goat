@@ -763,12 +763,61 @@ createButton(evScroll, "Go to Event Area", "Teleport to the current event area",
 	end
 end)
 
+local eventRollCount = 0
+local eventLastRollLabel = createLabel(evScroll, "Last roll : None")
+
+local function writeEventRollDebug(message)
+	local line = "[" .. os.date("%H:%M:%S") .. "] " .. tostring(message)
+	print("[GOAT]", message)
+	if appendfile then
+		pcall(function()
+			appendfile("goat_kaitun_debug.txt", line .. "\n")
+		end)
+	end
+end
+
+local function setEventRollStatus(message)
+	eventLastRollLabel.Text = "  Last roll : " .. tostring(message)
+end
+
+local function invokeEventRoll()
+	local network = game:GetService("ReplicatedStorage"):WaitForChild("Network")
+	local autoRoll = network:FindFirstChild("AutoRoll_Enable")
+	if autoRoll then
+		pcall(function()
+			autoRoll:FireServer()
+		end)
+	end
+
+	local rollRemote = network:WaitForChild("Rng_Roll")
+	local result = rollRemote:InvokeServer(eventConfig.rollEgg or "First")
+	eventRollCount += 1
+	setEventRollStatus("#" .. tostring(eventRollCount) .. " => " .. tostring(result))
+	writeEventRollDebug("Current Event Rng_Roll(" .. tostring(eventConfig.rollEgg or "First") .. ") #" .. tostring(eventRollCount) .. " => " .. tostring(result))
+	return result
+end
+
 local autoEventHatch = false
 createToggle(evScroll, "Auto Roll Event", "Automatically roll in the event", false, function(v)
 	autoEventHatch = v
 	if v then
+		if writefile then
+			pcall(function()
+				writefile("goat_kaitun_debug.txt", "GOAT Kaitun Debug\n")
+			end)
+		end
 		pcall(function()
 			game:GetService("ReplicatedStorage").Network:WaitForChild("AutoRoll_Enable"):FireServer()
+		end)
+		task.spawn(function()
+			while autoEventHatch do
+				local ok, result = pcall(invokeEventRoll)
+				if not ok then
+					setEventRollStatus("Error: " .. tostring(result))
+					writeEventRollDebug("Current Event roll failed: " .. tostring(result))
+				end
+				task.wait(0.5)
+			end
 		end)
 	else
 		pcall(function()
@@ -776,6 +825,22 @@ createToggle(evScroll, "Auto Roll Event", "Automatically roll in the event", fal
 		end)
 	end
 	notify("Auto Roll Event", v and "Enabled" or "Disabled", v and "success" or nil)
+end)
+
+createButton(evScroll, "Debug One Roll", "Test one event roll and save the result", function()
+	if writefile then
+		pcall(function()
+			writefile("goat_kaitun_debug.txt", "GOAT Kaitun Debug\n")
+		end)
+	end
+	local ok, result = pcall(invokeEventRoll)
+	if ok then
+		notify("Event Roll", "Roll returned " .. tostring(result), "success")
+	else
+		setEventRollStatus("Error: " .. tostring(result))
+		writeEventRollDebug("Current Event debug roll failed: " .. tostring(result))
+		notify("Event Roll", "Roll errored", "error")
+	end
 end)
 
 -- ================================================
@@ -1453,7 +1518,7 @@ local infoScroll = tabs["Info"].scroll
 
 createSection(infoScroll, "Script Info")
 createLabel(infoScroll, "Script : GOAT", Theme.Accent)
-createLabel(infoScroll, "Version : 1.1.3")
+createLabel(infoScroll, "Version : 1.1.4")
 createLabel(infoScroll, "Game : Pet Simulator 99")
 createLabel(infoScroll, "Author : 6usss")
 createLabel(infoScroll, "Event : " .. eventConfig.eventName)
