@@ -730,7 +730,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2.new(1, -16, 0, 20)
 versionLabel.Position = UDim2.new(0, 8, 1, -28)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "v1.1.2  •  6usss"
+versionLabel.Text = "v1.1.3  •  6usss"
 versionLabel.TextColor3 = Theme.TextDim
 versionLabel.TextSize = 10
 versionLabel.Font = Enum.Font.Gotham
@@ -846,6 +846,7 @@ local KaitunConfig = {
 	useDice = false,
 	teleportEvent = false,
 	loopDelay = 2,
+	rollsPerCycle = eventConfig.rollsPerCycle or 3,
 }
 
 local KaitunState = {
@@ -856,6 +857,7 @@ local KaitunState = {
 	rngCoins = "Scanning",
 	diceSummary = "Scanning",
 	lastStatsRefresh = "Never",
+	lastRollResult = "None",
 }
 
 local kaitunStatusLabel
@@ -865,6 +867,7 @@ local kaitunRollLabel
 local kaitunCoinsLabel
 local kaitunDiceLabel
 local kaitunRefreshLabel
+local kaitunLastRollLabel
 
 local function setKaitunStep(step)
 	KaitunState.step = step
@@ -899,6 +902,9 @@ local function refreshKaitunStatsLabels()
 	if kaitunRefreshLabel then
 		kaitunRefreshLabel.Text = "  Last refresh : " .. tostring(KaitunState.lastStatsRefresh)
 	end
+	if kaitunLastRollLabel then
+		kaitunLastRollLabel.Text = "  Last roll : " .. tostring(KaitunState.lastRollResult)
+	end
 end
 
 local function getCharacterRoot()
@@ -932,6 +938,25 @@ end
 
 local function fireRemote(name, ...)
 	getNetworkRemote(name):FireServer(...)
+end
+
+local function appendDebugLog(message)
+	local line = "[" .. os.date("%H:%M:%S") .. "] " .. tostring(message)
+	print("[GOAT]", message)
+
+	if appendfile then
+		pcall(function()
+			appendfile("goat_kaitun_debug.txt", line .. "\n")
+		end)
+	end
+end
+
+local function resetDebugLog()
+	if writefile then
+		pcall(function()
+			writefile("goat_kaitun_debug.txt", "GOAT Kaitun Debug\n")
+		end)
+	end
 end
 
 local function formatNumber(value)
@@ -1172,6 +1197,7 @@ local function safeKaitunCall(label, fn)
 	local ok, err = pcall(fn)
 	if not ok then
 		setKaitunError(label .. " failed: " .. tostring(err))
+		appendDebugLog(label .. " failed: " .. tostring(err))
 		return false
 	end
 	return true
@@ -1180,10 +1206,18 @@ end
 local KaitunHooks = {
 	AutoRoll = function()
 		fireRemote("AutoRoll_Enable")
-		local result = invokeRemote("Rng_Roll", eventConfig.rollEgg or "First")
-		KaitunState.sessionRolls += 1
-		refreshKaitunStatsLabels()
-		return result
+		local lastResult = nil
+		local rollEgg = eventConfig.rollEgg or "First"
+		for index = 1, math.max(1, KaitunConfig.rollsPerCycle) do
+			local result = invokeRemote("Rng_Roll", rollEgg)
+			lastResult = result
+			KaitunState.sessionRolls += 1
+			KaitunState.lastRollResult = tostring(result)
+			refreshKaitunStatsLabels()
+			appendDebugLog("Rng_Roll(" .. rollEgg .. ") #" .. index .. " => " .. tostring(result))
+			task.wait(0.2)
+		end
+		return lastResult
 	end,
 	HiddenRoll = function()
 		fireRemote("Rng_HiddenRoll_Enable")
@@ -1266,6 +1300,7 @@ kaitunRollLabel = createLabel(kaitunScroll, "Session rolls : 0")
 kaitunCoinsLabel = createLabel(kaitunScroll, "RNG Coins : Scanning")
 kaitunDiceLabel = createLabel(kaitunScroll, "V2 Dice : Scanning")
 kaitunRefreshLabel = createLabel(kaitunScroll, "Last refresh : Never")
+kaitunLastRollLabel = createLabel(kaitunScroll, "Last roll : None")
 kaitunErrorLabel = createLabel(kaitunScroll, "Last error : None")
 
 createSection(kaitunScroll, "Main")
@@ -1276,6 +1311,9 @@ createToggle(kaitunScroll, "Start Kaitun", "Run the full progression loop", fals
 end)
 createSlider(kaitunScroll, "Loop Delay", "Seconds between kaitun cycles", 1, 10, KaitunConfig.loopDelay, function(v)
 	KaitunConfig.loopDelay = v
+end)
+createSlider(kaitunScroll, "Rolls Per Cycle", "How many Rng_Roll calls per cycle", 1, 20, KaitunConfig.rollsPerCycle, function(v)
+	KaitunConfig.rollsPerCycle = v
 end)
 createButton(kaitunScroll, "Teleport to Void RNG", "Move into the current event area", function()
 	local ok, err = teleportTo(eventConfig.eventLocation or eventConfig.eggLocation, eventConfig.eventName)
@@ -1288,6 +1326,19 @@ end)
 createButton(kaitunScroll, "Refresh Live Stats", "Update coins and V2 dice now", function()
 	refreshLiveStats()
 	notify("Kaitun", "Live stats refreshed", "success")
+end)
+createButton(kaitunScroll, "Debug One Roll", "Run one Rng_Roll call and log the result", function()
+	resetDebugLog()
+	local ok, result = pcall(function()
+		return invokeRemote("Rng_Roll", eventConfig.rollEgg or "First")
+	end)
+	KaitunState.lastRollResult = ok and tostring(result) or "Error: " .. tostring(result)
+	if ok then
+		KaitunState.sessionRolls += 1
+	end
+	refreshKaitunStatsLabels()
+	appendDebugLog("Debug one roll => ok=" .. tostring(ok) .. " result=" .. tostring(result))
+	notify("Kaitun Debug", ok and "Roll returned " .. tostring(result) or "Roll errored", ok and "success" or "error")
 end)
 
 createSection(kaitunScroll, "Void RNG")
@@ -1402,7 +1453,7 @@ local infoScroll = tabs["Info"].scroll
 
 createSection(infoScroll, "Script Info")
 createLabel(infoScroll, "Script : GOAT", Theme.Accent)
-createLabel(infoScroll, "Version : 1.1.2")
+createLabel(infoScroll, "Version : 1.1.3")
 createLabel(infoScroll, "Game : Pet Simulator 99")
 createLabel(infoScroll, "Author : 6usss")
 createLabel(infoScroll, "Event : " .. eventConfig.eventName)

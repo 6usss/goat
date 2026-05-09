@@ -8,6 +8,7 @@ return {
 	merchantName = "LuckyDiceMerchantV2",
 	craftDiceName = "Lucky Dice II V2",
 	rollEgg = "First",
+	rollsPerCycle = 3,
 	upgradeTier = "First",
 	upgrades = {
 		"RNGEggLuck",
