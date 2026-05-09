@@ -39,6 +39,8 @@ local ok, bootError = xpcall(function()
 		eggLocation = Vector3.new(4023.49, 2569.82, -5448.95),
 		merchantName = "LuckyDiceMerchantV2",
 		craftDiceName = "Lucky Dice II V2",
+		craftAmount = 1,
+		megaDiceNames = { "Mega Lucky Dice II V2", "Mega Lucky Dice V2", "Mega Lucky Dice II", "Mega Lucky Dice" },
 		rollEgg = "First",
 		rollsPerCycle = 3,
 		upgradeTier = "First",
@@ -302,18 +304,56 @@ local ok, bootError = xpcall(function()
 		end
 	end
 
+	local function craftDice()
+		local diceName = eventConfig.craftDiceName or "Lucky Dice II V2"
+		local amount = eventConfig.craftAmount or 1
+		local result = invokeRemote("LuckyDice_Craft", diceName, amount)
+		uiLog("Craft " .. tostring(amount) .. "x " .. tostring(diceName) .. " => " .. tostring(result), Theme.Good)
+		return result
+	end
+
+	local function useMegaDice()
+		local attempts = {
+			{},
+		}
+
+		for _, diceName in ipairs(eventConfig.megaDiceNames or {}) do
+			table.insert(attempts, { diceName })
+		end
+
+		local lastError = nil
+		for index, args in ipairs(attempts) do
+			local okUse, result = pcall(function()
+				return invokeRemote("LuckyDice_ConsumeMega", table.unpack(args))
+			end)
+
+			local label = #args > 0 and tostring(args[1]) or "no args"
+			uiLog("Mega dice attempt " .. tostring(index) .. " (" .. label .. ") => " .. tostring(okUse and result or "error"), okUse and Theme.Good or Theme.Bad)
+
+			if okUse and result ~= false then
+				return result
+			end
+			lastError = result
+			task.wait(0.15)
+		end
+
+		error("Mega dice consume failed: " .. tostring(lastError))
+	end
+
 	local function runCycle()
 		state.cycles += 1
 		refreshStatus()
 		safeAction("Teleport", teleportEvent)
+		safeAction("Buy upgrades", buyUpgrades)
+		safeAction("Buy merchant", buyMerchant)
+		safeAction("Craft dice", craftDice)
+		safeAction("Use mega dice", useMegaDice)
 		safeAction("Roll", function()
 			for index = 1, eventConfig.rollsPerCycle or 3 do
 				rollOnce("cycle #" .. tostring(index))
 				task.wait(0.25)
 			end
 		end)
-		safeAction("Buy upgrades", buyUpgrades)
-		safeAction("Buy merchant", buyMerchant)
 	end
 
 	local ScreenGui = Instance.new("ScreenGui")
@@ -553,6 +593,8 @@ local ok, bootError = xpcall(function()
 	button(kaitunPage, "Run One Cycle", runCycle)
 	button(kaitunPage, "Buy RNG Upgrades", buyUpgrades)
 	button(kaitunPage, "Buy Merchant V2 Slots", buyMerchant)
+	button(kaitunPage, "Craft Lucky Dice II V2", craftDice)
+	button(kaitunPage, "Use Mega Lucky Dice", useMegaDice)
 	button(kaitunPage, "Refresh Live Stats", refreshStats)
 
 	section(debugPage, "Console")

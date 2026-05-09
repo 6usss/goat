@@ -7,6 +7,13 @@ return {
 	diceCraftLocation = Vector3.new(4079.96, 2569.82, -5344.44),
 	merchantName = "LuckyDiceMerchantV2",
 	craftDiceName = "Lucky Dice II V2",
+	craftAmount = 1,
+	megaDiceNames = {
+		"Mega Lucky Dice II V2",
+		"Mega Lucky Dice V2",
+		"Mega Lucky Dice II",
+		"Mega Lucky Dice",
+	},
 	rollEgg = "First",
 	rollsPerCycle = 3,
 	upgradeTier = "First",
