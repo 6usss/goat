@@ -102,6 +102,8 @@ local function createPadding(parent, top, bottom, left, right)
 end
 
 local function notify(title, message, ntype)
+	print("[GOAT Notify]", tostring(title), tostring(message), tostring(ntype or "info"))
+
 	local color = ntype == "success" and Theme.Success or ntype == "error" and Theme.Danger or Theme.Accent
 
 	local notif = Instance.new("Frame")
