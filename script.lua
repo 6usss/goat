@@ -5,7 +5,7 @@
 
 -- Load current event config
 local eventConfig = (function()
-	local fn = loadstring(game:HttpGet("https://raw.githubusercontent.com/6usss/goat/main/events/current.lua"))
+	local fn = loadstring(game:HttpGet("https://raw.githubusercontent.com/6usss/goat/main/events/current.lua?cache=" .. tostring(os.time())))
 	if fn then
 		return fn()
 	end
@@ -25,6 +25,12 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
+local GuiParent = gethui and gethui() or game.CoreGui
+
+local oldGui = GuiParent:FindFirstChild("GOATScript")
+if oldGui then
+	oldGui:Destroy()
+end
 
 -- ================================================
 --  GUI Setup
@@ -33,7 +39,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "GOATScript"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = gethui and gethui() or game.CoreGui
+ScreenGui.Parent = GuiParent
 
 -- ================================================
 --  Colors & Theme
